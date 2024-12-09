@@ -1,4 +1,4 @@
-use crate::dummy_analyze::dummy_analyze;
+use crate::analyzer::analyze_line;
 use iced::{
     self,
     widget::{button, column, container, row, scrollable, text, text_input, Column},
@@ -35,6 +35,8 @@ impl TaaflUIState {
             Message::TextInputChanged(content) => {
                 self.content = content;
                 self.syntax_output.clear();
+                self._semantics_output.clear();
+                self._syntax_success = false;
 
                 Task::none()
             }
@@ -52,30 +54,29 @@ impl TaaflUIState {
                 Task::none()
             }
             Message::Analyze => {
-                let result = dummy_analyze(&self.content);
-                self._syntax_success = result.is_ok();
-
-                match result {
-                    Result::Ok(_success) => {
-                        self.syntax_output =
-                            self.content.clone() + "\nThis string belongs to the language.";
-                        self._syntax_success = true;
+                if !self.content.is_empty() {
+                    match analyze_line(&self.content) {
+                        Ok((ids, consts)) => {
+                            if ids.is_some() && consts.is_some() {
+                                self._syntax_success = true;
+                                self.syntax_output =
+                                    self.content.clone() + "\n" + "Строка принадлежит языку.";
+                            }
+                        }
+                        Err(e) => {
+                            self.syntax_output = e;
+                        }
                     }
-                    Err(e) => {
-                        self.syntax_output = format!("{:?}", e);
-                    }
+                } else {
+                    self.syntax_output = "Введите хоть что-нибудь (o_O)".to_string();
                 }
 
                 Task::none()
             }
             Message::Semantics => {
-                let result = dummy_analyze(&self.content);
-
-                if let Ok(success) = result {
-                    self._semantics_output =
-                        format!("{:?}\n{:?}", success.constants, success.identifiers)
+                if let Ok((Some(ids), Some(consts))) = analyze_line(&self.content) {
+                    self._semantics_output = ids + "\n" + consts.as_ref();
                 }
-
                 Task::none()
             }
         }
@@ -83,16 +84,18 @@ impl TaaflUIState {
 
     pub fn view(&self) -> Column<Message> {
         let (text_input_widget, button_clear) = (
-            text_input("Type something here...", self.content.as_ref())
-                .on_input(Message::TextInputChanged)
-                .on_submit(Message::TextInputSubmit),
-            button("Clear").on_press(Message::TextInputClear),
+            scrollable(
+                text_input("Напишите здесь что-нибудь... 🤓", self.content.as_ref())
+                    .on_input(Message::TextInputChanged)
+                    .on_submit(Message::TextInputSubmit),
+            ),
+            button("Очистить").on_press(Message::TextInputClear),
         );
 
         let (button_input, button_analyze, button_semantics) = (
-            button("Input").on_press(Message::TextInputSubmit),
-            button("Analyze").on_press(Message::Analyze),
-            button("Semantics").on_press_maybe(if self._syntax_success {
+            button("Ввод").on_press(Message::TextInputSubmit),
+            button("Анализ").on_press(Message::Analyze),
+            button("Семантика").on_press_maybe(if self._syntax_success {
                 Some(Message::Semantics)
             } else {
                 None
@@ -108,7 +111,7 @@ impl TaaflUIState {
             .width(Fill)
             .height(OUTPUT_HEIGHT);
 
-        Self::base_column("Automata")
+        Self::base_column("Оператор присваивания языка Modula-2")
             .push(row![button_input, button_analyze, button_semantics].spacing(COLUMN_SPACING / 3))
             .push(row![].push(text_input_widget).push(button_clear))
             .push(
